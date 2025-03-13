@@ -5,7 +5,7 @@ module instruction_memory (
     reg [31:0] memory [0:127]; // 128-word instruction memory
 
     initial begin
-        $readmemh("instructions.mem", memory); // Load instructions from external file
+        $readmemh("instructions.hex", memory); // Load instructions from external file
     end
 
     always @(*) begin
