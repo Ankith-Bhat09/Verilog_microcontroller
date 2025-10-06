@@ -5,22 +5,37 @@ input reset;
 //***********************************************************************\\
 // Parameters
 // Register type
-parameter ADD=6'b000001, SUB=6'b000010, AND=6'b000011, OR=6'b000100, XOR=6'b000101;
+parameter ADD=6'b000001;    // ADD rs1 rs2 rd
+parameter SUB=6'b000010;    // SUB rs1 rs2 rd
+parameter AND=6'b000011;    // AND rs1 rs2 rd
+parameter OR=6'b000100;     // OR rs1 rs2 rd
+parameter XOR=6'b000101;    // XOR rs1 rs2 rd
 // Immediate type
-parameter ADDI=6'b000110, SUBI=6'b000111, ANDI=6'b001000, ORI=6'b001001;
-parameter Load=6'b001010, Store=6'b001011;
-//imediate type with check for opcode
-parameter shiftR=6'b010001, shiftL=6'b010010;
-parameter branch=6'b100000, Jmp=6'b100001, Beq=6'b100010, Blt=6'b100011,Bgt=6'b100100;
-parameter Nop=6'b000000;
-parameter Halt=6'b111111;
+parameter ADDI=6'b000110;   // ADDI rs1 rd imm
+parameter SUBI=6'b000111;   // SUBI rs1 rd imm
+parameter ANDI=6'b001000;   // ANDI rs1 rd imm
+parameter ORI=6'b001001;    // ORI rs1 rd imm
+parameter Load=6'b001010;   // Load rs1 rd
+parameter Store=6'b001011;  // Store rs1 rd
+
+// Immediate type with check for opcode
+
+parameter shiftR=6'b010001; // shiftR rs1 rd imm
+parameter shiftL=6'b010010; // shiftL rs1 rd imm
+parameter branch=6'b100000; // branch rs1 imm
+parameter Jmp=6'b100001;    // Jmp imm
+parameter Beq=6'b100010;    // Beq rs1 rs2 imm
+parameter Blt=6'b100011;    // Blt rs1 rs2 imm
+parameter Bgt=6'b100100;    // Bgt rs1 rs2 imm
+parameter Nop=6'b000000;    // Nop
+parameter Halt=6'b111111;   // Halt
 
 //***********************************************************************\\
 // Operation type
 parameter rr_ALU=4'b0001, ri_ALU=4'b0010, ri_Load=4'b0011, ri_Store=4'b0100;
 parameter ri_shiftR=4'b0101, ri_shiftL=4'b0110;
-parameter branch=4'b0111;
-parameter rr_Nop=4'b1000, rr_Halt=4'b1001;
+parameter r_branch=4'b0111;
+parameter r_Nop=4'b1000, r_Halt=4'b1001;
 //***********************************************************************\\
 //Internal register and wires
 reg [31:0] PC,if_id_ir;
@@ -39,7 +54,8 @@ begin
     end
     if (halted==0)
     begin
-        if()
+        if((exe_mem_ir[31:26]==branch)||(exe_mem_ir[31:26]==Jmp)||(exe_mem_ir[31:26]==Beq)||(exe_mem_ir[31:26]==Blt)||(exe_mem_ir[31:26]==Bgt) )
+        else
         begin
             if_id_ir<=mem[PC];
             PC<=PC+1;
@@ -51,12 +67,14 @@ end
 // Instruction Decode
 always @(posedge clk2)
 begin
+//*********** check for debug here This may be a problem. ***********\\
 if (halted==0)
 begin
     if(if_id_ir[31:26]==Jmp)
     begin
         PC<=if_id_ir[25:0];
     end
+//*********** check for debug here This may be a problem. ***********\\
     if(if_id_ir[25:21]==5'b00000) id_ex_a<=0;
     else id_ex_a<=#2 regfile[if_id_ir[25:21]];
 
@@ -68,27 +86,27 @@ begin
     id_ex_npc<=if_id_npc;
 
     case (if_id_ir[31:26])
-        ADD: id_ex_op<=rr_ALU;  // Add
-        SUB: id_ex_op<=rr_ALU;  // Subtract
-        AND: id_ex_op<=rr_ALU;  // And
-        OR: id_ex_op<=rr_ALU;    // Or
-        NOT: id_ex_op<=rr_ALU;  // Not
-        ADDI: id_ex_op<=ri_ALU;  // Add Immediate
-        SUBI: id_ex_op<=ri_ALU;  // Subtract Immediate
-        ANDI: id_ex_op<=ri_ALU;  // And Immediate
-        ORI:  id_ex_op<=ri_ALU;   // Or Immediate
-        Load: id_ex_op<=ri_Load;  // Load
-        Store:id_ex_op<=ri_Store; // Store
-        shiftR:id_ex_op<=ri_shiftR; // Shift Right
-        shiftL:id_ex_op<=ri_shiftL; // Shift Left
-        branch:id_ex_op<=branch; // Branch
-        Jmp:   id_ex_op<=branch;   // Jump
-        Beq:   id_ex_op<=branch;   // Branch if Equal
-        Blt:   id_ex_op<=branch;   // Branch if Less Than
-        Bgt:   id_ex_op<=branch;   // Branch if Greater Than
-        Nop:   id_ex_op<=rr_Nop;   // No Operation
-        Halt:  id_ex_op<=rr_Halt;  // Halt
-        default: id_ex_op<=Nop;
+        ADD: id_ex_optype<=rr_ALU;          // Add
+        SUB: id_ex_optype<=rr_ALU;          // Subtract
+        AND: id_ex_optype<=rr_ALU;          // And
+        OR: id_ex_optype<=rr_ALU;           // Or
+        NOT: id_ex_optype<=rr_ALU;          // Not
+        ADDI: id_ex_optype<=ri_ALU;         // Add Immediate
+        SUBI: id_ex_optype<=ri_ALU;         // Subtract Immediate
+        ANDI: id_ex_optype<=ri_ALU;         // And Immediate
+        ORI:  id_ex_optype<=ri_ALU;         // Or Immediate
+        Load: id_ex_optype<=ri_Load;        // Load
+        Store:id_ex_optype<=ri_Store;       // Store
+        shiftR:id_ex_optype<=ri_shiftR;     // Shift Right
+        shiftL:id_ex_optype<=ri_shiftL;     // Shift Left
+        branch:id_ex_optype<=r_branch;      // Branch
+        Jmp:   id_ex_optype<=r_branch;      // Jump
+        Beq:   id_ex_optype<=r_branch;      // Branch if Equal
+        Blt:   id_ex_optype<=r_branch;      // Branch if Less Than
+        Bgt:   id_ex_optype<=r_branch;      // Branch if Greater Than
+        Nop:   id_ex_optype<=r_Nop;         // No Operation
+        Halt:  id_ex_optype<=r_Halt;        // Halt
+        default: id_ex_optype<=r_Nop;
     endcase
 end
 end
@@ -99,18 +117,84 @@ begin
     if(halted==0)
     begin
         ex_mem_ir<=id_ex_ir;
-        ex_mem_op<=id_ex_op;
+        ex_mem_optype<=id_ex_optype;
         taken_branch<=0;
-        case(id_ex_op)
+        case(id_ex_optype)
             rr_ALU: case(id_ex_ir[31:26])
-                        ADD: ex_mem_ALUout <= id_ex_a + id_ex_b; // ADD
-                        SUB: ex_mem_ALUout <= id_ex_a - id_ex_b; // SUB
-                        AND: ex_mem_ALUout <= id_ex_a & id_ex_b; // AND
-                        OR:  ex_mem_ALUout <= id_ex_a | id_ex_b; // OR
-                        XOR: ex_mem_ALUout <= id_ex_a ^ id_ex_b; // XOR
+                        ADD: ex_mem_ALUout <= id_ex_a + id_ex_b;    // ADD
+                        SUB: ex_mem_ALUout <= id_ex_a - id_ex_b;    // SUB
+                        AND: ex_mem_ALUout <= id_ex_a & id_ex_b;    // AND
+                        OR:  ex_mem_ALUout <= id_ex_a | id_ex_b;    // OR
+                        XOR: ex_mem_ALUout <= id_ex_a ^ id_ex_b;    // XOR
                         default: ex_mem_ALUout <=0;
                     endcase
-
+            ri_ALU: case(id_ex_ir[31:26])
+                        ADDI: ex_mem_ALUout <= id_ex_a + id_ex_imm; // ADDI
+                        SUBI: ex_mem_ALUout <= id_ex_a - id_ex_imm; // SUBI
+                        ANDI: ex_mem_ALUout <= id_ex_a & id_ex_imm; // ANDI
+                        ORI:  ex_mem_ALUout <= id_ex_a | id_ex_imm; // ORI
+                        default: ex_mem_ALUout <=0;
+                    endcase
+            ri_Load, ri_Store:
+            begin
+                ex_mem_ALUout <= id_ex_a + id_ex_imm;
+                ex_mem_b <= id_ex_b;
+            end
+            ri_shiftL,ri_shiftR:
+            begin
+                case(id_ex_ir[31:26])
+                    shiftL: ex_mem_ALUout <= id_ex_a << id_ex_imm; // Shift Left
+                    shiftR: ex_mem_ALUout <= id_ex_a >> id_ex_imm; // Shift Right
+                    default: ex_mem_ALUout <=0;
+                endcase
+            end
+            r_branch:
+            begin
+                case(id_ex_ir[31:26])
+                begin
+                    branch:
+                    begin
+                        ex_mem_ALUout <= id_ex_npc + id_ex_imm;
+                        ex_mem_cond <= (id_ex_a==0)? 1:0;
+                    end
+                    Jmp:
+                    begin
+                        ex_mem_ALUout <= id_ex_ir[25:0];
+                        ex_mem_cond <= 1;
+                    end
+                    Beq:
+                    begin
+                        if(id_ex_a==id_ex_b)
+                        begin
+                            ex_mem_ALUout <= id_ex_npc + id_ex_imm;
+                            ex_mem_cond <= 1;
+                        end
+                        else begin
+                            ex_mem_cond <= 0;
+                        end
+                    Blt:
+                    begin
+                        if(id_ex_a < id_ex_b)
+                        begin
+                            ex_mem_ALUout <= id_ex_npc + id_ex_imm;
+                            ex_mem_cond <= 1;
+                        end
+                        else begin
+                            ex_mem_cond <= 0;
+                        end
+                    Bgt:
+                    begin
+                        if(id_ex_a > id_ex_b)
+                        begin
+                            ex_mem_ALUout <= id_ex_npc + id_ex_imm;
+                            ex_mem_cond <= 1;
+                        end
+                        else begin
+                            ex_mem_cond <= 0;
+                        end
+                    end
+                end
+            end
         endcase
     end
 end
@@ -119,9 +203,7 @@ end
 always @(posedge clk2)
 begin
 
-            ex_mem_ALUout <= id_ex_a + id_ex_imm; // ADDI
-            ex_mem_ALUout <= id_ex_a - id_ex_imm; // SUBI
-        endcase
+
     end
 end
 //***********************************************************************\\
