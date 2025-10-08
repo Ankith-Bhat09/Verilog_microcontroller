@@ -54,12 +54,18 @@ begin
     end
     if (halted==0)
     begin
-        if((exe_mem_ir[31:26]==branch)||(exe_mem_ir[31:26]==Jmp)||(exe_mem_ir[31:26]==Beq)||(exe_mem_ir[31:26]==Blt)||(exe_mem_ir[31:26]==Bgt) )
+        if(((exe_mem_ir[31:26]==branch)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Jmp)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Beq)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Blt)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Bgt)&&(ex_mem_cond == 1)))
+        begin
+            if_id_ir <= mem[ex_mem_ALUout];
+            taken_branch <= 1;
+            if_id_npc <= ex_mem_ALUout + 1;
+            PC <= ex_mem_ALUout + 1;
+        end
         else
         begin
             if_id_ir<=mem[PC];
             PC<=PC+1;
-            if_id_npc<=PC;
+            if_id_npc<=PC+1;
         end
     end
 end
@@ -68,12 +74,12 @@ end
 always @(posedge clk2)
 begin
 //*********** check for debug here This may be a problem. ***********\\
-if (halted==0)
-begin
-    if(if_id_ir[31:26]==Jmp)
-    begin
-        PC<=if_id_ir[25:0];
-    end
+//if (halted==0)
+//begin
+//    if(if_id_ir[31:26]==Jmp)
+//    begin
+//        PC<=if_id_ir[25:0];
+//end
 //*********** check for debug here This may be a problem. ***********\\
     if(if_id_ir[25:21]==5'b00000) id_ex_a<=0;
     else id_ex_a<=#2 regfile[if_id_ir[25:21]];
@@ -202,21 +208,41 @@ end
 // Memory
 always @(posedge clk2)
 begin
-
-
+    if(halted==0)
+    begin
+        mem_wb_optype <= ex_mem_optype;
+        mem_wb_ir <= ex_mem_ir;
+        case(ex_mem_optype)
+            rr_ALU, ri_ALU:
+                mem_wb_ALUout <= #2 ex_mem_ALUout;
+            ri_Load:
+                mem_wb_Loadout <= #2 mem[ex_mem_ALUout];
+            ri_Store:
+                if(taken_branch==0) mem[ex_mem_ALUout] <= #2 ex_mem_b;
+        endcase
     end
-end
-//***********************************************************************\\
-// Memory
-always @(posedge clk2)
-begin
-
 end
 //***********************************************************************\\
 // Write Back
 always @(posedge clk1)
 begin
-
+    if(taken_branch==0)
+    begin
+        case(mem_wb_optype)
+            rr_ALU:
+                regfile[mem_wb_ir[15:11]] <= #2 mem_wb_ALUout;
+            ri_ALU:
+                regfile[mem_wb_ir[20:16]] <=#2 mem_wb_ALUout;
+            ri_shiftL:
+                regfile[mem_wb_ir[20:16]] <=#2 mem_wb_ALUout;
+            ri_shiftR:
+                regfile[mem_wb_ir[20:16]] <=#2 mem_wb_ALUout;
+            ri_Load:
+                regfile[mem_wb_ir[20:16]] <=#2 mem_wb_Loadout;
+            r_Halt:
+                halted <= 1;
+        endcase
+    end
 end
 //***********************************************************************\\
 endmodule
