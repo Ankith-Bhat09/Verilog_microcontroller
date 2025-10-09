@@ -41,6 +41,7 @@ parameter r_Nop=4'b1000, r_Halt=4'b1001;
 reg [31:0] PC,if_id_ir;
 reg [31:0] mem[0:255];
 reg [31:0] regfile[0:31];
+integer i;
 reg halted;
 reg taken_branch;
 reg [31:0] if_id_npc, id_ex_npc;
@@ -54,15 +55,25 @@ reg ex_mem_cond;
 reg [31:0] mem_wb_ir;
 reg [3:0] mem_wb_optype;
 reg [31:0] mem_wb_ALUout, mem_wb_Loadout;
+always @(reset) begin
+        PC <= 0;
+        if_id_ir <= 0;
+        if_id_npc <= 0;
+        halted <= 0;
+        taken_branch <= 0;
+        // Clear register file and memory on reset to avoid X state
+        for (i = 0; i < 32; i = i + 1) begin
+            regfile[i] <= 0;
+        end
+        for (i = 0; i < 256; i = i + 1) begin
+            mem[i] <= 0;
+        end
+end
 
 //***********************************************************************\\
 // Instruction Fetch
 always @(posedge clk1)
 begin
-    if(reset)
-    begin
-        PC<=0;
-    end
     if (halted==0)
     begin
         if(((ex_mem_ir[31:26]==branch)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Jmp)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Beq)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Blt)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Bgt)&&(ex_mem_cond == 1)))
@@ -98,7 +109,8 @@ begin
     if(if_id_ir[20:16]==5'b00000) id_ex_b<=0;
     else id_ex_b<=#2 regfile[if_id_ir[20:16]];
 
-    id_ex_imm<= {{16{if_id_ir[15]}},if_id_ir[15:0]};
+    if(if_id_ir[10:0]==11'b00000000000) id_ex_imm<=0;
+    else id_ex_imm<=#2 {{16{if_id_ir[15]}},{if_id_ir[15:0]}};
     id_ex_ir<=if_id_ir;
     id_ex_npc<=if_id_npc;
 
@@ -166,7 +178,6 @@ begin
             r_branch:
             begin
                 case(id_ex_ir[31:26])
-
                     branch:
                     begin
                         ex_mem_ALUout <= id_ex_npc + id_ex_imm;
