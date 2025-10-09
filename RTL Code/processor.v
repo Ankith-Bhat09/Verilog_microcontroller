@@ -43,6 +43,18 @@ reg [31:0] mem[0:255];
 reg [31:0] regfile[0:31];
 reg halted;
 reg taken_branch;
+reg [31:0] if_id_npc, id_ex_npc;
+reg [31:0] id_ex_a, id_ex_b, id_ex_imm;
+reg [31:0] id_ex_ir;
+reg [3:0] id_ex_optype;
+reg [31:0] ex_mem_ir;
+reg [3:0] ex_mem_optype;
+reg [31:0] ex_mem_ALUout, ex_mem_b;
+reg ex_mem_cond;
+reg [31:0] mem_wb_ir;
+reg [3:0] mem_wb_optype;
+reg [31:0] mem_wb_ALUout, mem_wb_Loadout;
+
 //***********************************************************************\\
 // Instruction Fetch
 always @(posedge clk1)
@@ -50,11 +62,10 @@ begin
     if(reset)
     begin
         PC<=0;
-        mem <=0;
     end
     if (halted==0)
     begin
-        if(((exe_mem_ir[31:26]==branch)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Jmp)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Beq)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Blt)&&(ex_mem_cond == 1))||((exe_mem_ir[31:26]==Bgt)&&(ex_mem_cond == 1)))
+        if(((ex_mem_ir[31:26]==branch)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Jmp)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Beq)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Blt)&&(ex_mem_cond == 1))||((ex_mem_ir[31:26]==Bgt)&&(ex_mem_cond == 1)))
         begin
             if_id_ir <= mem[ex_mem_ALUout];
             taken_branch <= 1;
@@ -96,7 +107,6 @@ begin
         SUB: id_ex_optype<=rr_ALU;          // Subtract
         AND: id_ex_optype<=rr_ALU;          // And
         OR: id_ex_optype<=rr_ALU;           // Or
-        NOT: id_ex_optype<=rr_ALU;          // Not
         ADDI: id_ex_optype<=ri_ALU;         // Add Immediate
         SUBI: id_ex_optype<=ri_ALU;         // Subtract Immediate
         ANDI: id_ex_optype<=ri_ALU;         // And Immediate
