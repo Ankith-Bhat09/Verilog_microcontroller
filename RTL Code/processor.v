@@ -1,4 +1,4 @@
-module processor();
+module processor(clk1, clk2, reset);
 //Input and output ports
 input clk1, clk2;
 input reset;
@@ -245,4 +245,5 @@ begin
     end
 end
 //***********************************************************************\\
+
 endmodule
