@@ -115,7 +115,6 @@ begin
         default: id_ex_optype<=r_Nop;
     endcase
 end
-end
 //***********************************************************************\\
 // Execute
 always @(posedge clk1)
@@ -157,7 +156,7 @@ begin
             r_branch:
             begin
                 case(id_ex_ir[31:26])
-                begin
+
                     branch:
                     begin
                         ex_mem_ALUout <= id_ex_npc + id_ex_imm;
@@ -178,6 +177,7 @@ begin
                         else begin
                             ex_mem_cond <= 0;
                         end
+                    end
                     Blt:
                     begin
                         if(id_ex_a < id_ex_b)
@@ -188,6 +188,7 @@ begin
                         else begin
                             ex_mem_cond <= 0;
                         end
+                    end
                     Bgt:
                     begin
                         if(id_ex_a > id_ex_b)
@@ -199,7 +200,7 @@ begin
                             ex_mem_cond <= 0;
                         end
                     end
-                end
+                endcase
             end
         endcase
     end
@@ -245,5 +246,4 @@ begin
     end
 end
 //***********************************************************************\\
-
 endmodule
