@@ -1,135 +1,596 @@
-module pipe_mips32 (clk1, clk2);
-  input clk1, clk2;
-  reg [31:0] PC, IF_ID_IR, IF_ID_NPC;
+`timescale 1ns / 1ps
 
-  reg [31:0] ID_EX_IR, ID_EX_NPC, ID_EX_A, ID_EX_B, ID_EX_Imm;
-  reg [2 :0] ID_EX_type, EX_MEM_type, MEM_WB_type;
+module misp(
+    input clk,
+    output [7:0] led,
+    output buzzer
+);
+    reg [22:0] counter = 0;
+    reg slow_en = 0;
 
-  reg [31:0] EX_MEM_IR, EX_MEM_ALUOut, EX_MEM_B;
-  reg EX_MEM_cond;
-  reg [31:0] MEM_WB_IR, MEM_WB_ALUOut, MEM_WB_LMD;
-  reg [31:0] Reg [0:31];
-  reg [31:0] Mem [0:1023];
-// MOVI instruction assumes source register as r0 by default
-  parameter ADD=6'b000000, SUB=6'b000001, AND=6'b000010, OR=6'b000011,
-            SLT=6'b000100, MUL=6'b000101, MOVI=6'b000110, HLT=6'b111111, LW=6'b001000, // Corrected LW opcode
-            SW=6'b001001, ADDI=6'b001010, SUBI=6'b001011,SLTI=6'b001100,SRTI=6'b001111,
-            BNEQZ=6'b001101, BEQZ=6'b001110;
-
-  parameter RR_ALU=3'b000, RM_ALU=3'b001, LOAD=3'b010, STORE=3'b011,
-            BRANCH=3'b100, HALT=3'b101;
-  reg HALTED;
-  reg TAKEN_BRANCH;
-/*********************************************************************/
-  always @ (posedge clk1)// IF Stage
-    if (HALTED == 0)
-    begin
-      if (((EX_MEM_IR[31:26] == BEQZ) && (EX_MEM_cond == 1)) ||((EX_MEM_IR[31:26] == BNEQZ) && (EX_MEM_cond == 0) ) )
-        begin
-          IF_ID_IR<= #2 Mem[EX_MEM_ALUOut];
-          TAKEN_BRANCH<= #2 1'b0;
-          IF_ID_NPC<= #2 EX_MEM_ALUOut + 1;
-          PC<= #2 EX_MEM_ALUOut + 1;
-        end
-      else
-        begin
-          IF_ID_IR<= #2 Mem[PC] ;
-          IF_ID_NPC<= #2 PC + 1;
-          PC<= #2 PC + 1;
-        end
+    always @(posedge clk) begin
+        counter <= counter + 1;
+        slow_en <= (counter == 0); // Pulse for slow execution
     end
-/*********************************************************************/
-  always @(posedge clk2)// ID Stage
-    if (HALTED == 0)
-      begin
-        if (IF_ID_IR[25:21] == 5'b00000) ID_EX_A <= 0;
-        else ID_EX_A<= #2 Reg[IF_ID_IR[25:21] ]; 
 
-        if (IF_ID_IR[20:16] == 5'b00000) ID_EX_B <= 0;
-        else ID_EX_B <= #2 Reg[IF_ID_IR[20:16]];
+    pipe_mips32 cpu (.clk(clk), .slow_en(slow_en), .led(led), .buzzer(buzzer));
+endmodule
+module pipe_mips32(
+    input clk,
+    input slow_en,
+    output [7:0] led,
+    output buzzer
+    );
 
-        ID_EX_NPC <= #2 IF_ID_NPC;
-        ID_EX_IR <= #2 IF_ID_IR;
-        ID_EX_Imm <= #2 {{16{IF_ID_IR[15]}},{IF_ID_IR[15:0]}};
-        case (IF_ID_IR[31:26])
-          ADD, SUB, AND, OR, SLT, MUL: ID_EX_type <= #2 RR_ALU;
-          ADDI, SUBI, SLTI, SRTI, MOVI:    ID_EX_type <= #2 RM_ALU;
-          LW:                              ID_EX_type <= #2 LOAD;
-          SW:                              ID_EX_type <= #2 STORE;
-          BNEQZ, BEQZ :                    ID_EX_type <= #2 BRANCH;
-          HLT:                             ID_EX_type <= #2 HALT;
-          default:                         ID_EX_type <= #2 HALT;
-        endcase
-      end
-/*********************************************************************/
-  always @(posedge clk1)    // EX Stage
-    if (HALTED == 0)
-      begin
-        EX_MEM_type <= #2 ID_EX_type;
-        EX_MEM_IR <= #2 ID_EX_IR;
-        TAKEN_BRANCH <= #2 0;
-        case (ID_EX_type)
-          RR_ALU:   begin 
-            case (ID_EX_IR[31:26])
-              ADD :           EX_MEM_ALUOut <= #2 ID_EX_A + ID_EX_B;
-              SUB:            EX_MEM_ALUOut <= #2 ID_EX_A - ID_EX_B;
-              AND:            EX_MEM_ALUOut <= #2 ID_EX_A & ID_EX_B;
-              OR:             EX_MEM_ALUOut <= #2 ID_EX_A | ID_EX_B;
-              SLT:            EX_MEM_ALUOut <= #2 (ID_EX_A < ID_EX_B) ? 32'b1 : 32'b0;// trial
-              MUL:            EX_MEM_ALUOut <= #2 ID_EX_A * ID_EX_B;
-              default:        EX_MEM_ALUOut <= #2 32'hxxxxxxxx;
+    //================ REGISTERS =================//
+
+    reg [31:0] PC = 0;
+
+    reg [31:0] IF_ID_IR, IF_ID_NPC;
+
+    reg [31:0] ID_EX_IR;
+    reg [31:0] ID_EX_A, ID_EX_B;
+    reg [31:0] ID_EX_Imm, ID_EX_NPC;
+
+    reg [31:0] EX_MEM_IR;
+    reg [31:0] EX_MEM_ALUOut;
+
+    reg [31:0] MEM_WB_IR;
+    reg [31:0] MEM_WB_ALUOut;
+    reg [31:0] MEM_WB_LMD;
+
+    (* ram_style = "distributed" *)
+    reg [31:0] RegFile [0:31];
+
+    reg [31:0] Mem [0:255];
+
+    parameter
+        ADD   = 6'b000000,
+        SUB   = 6'b000001,
+        SLT   = 6'b000100,
+        MOVI  = 6'b000110,
+        LW    = 6'b001000,
+        ADDI  = 6'b001010,
+        SRTI  = 6'b001111,
+        BNEQZ = 6'b001101,
+        BEQZ  = 6'b001110,
+        HLT   = 6'b111111;
+
+    reg HALTED = 0;
+
+    reg branch_taken;
+    reg [31:0] branch_target;
+
+    integer i;
+
+    //================ INITIALIZATION =================//
+
+    initial begin
+
+        //====================================================
+        // RESET
+        //====================================================
+
+        PC = 0;
+
+        IF_ID_IR   = 0;
+        IF_ID_NPC  = 0;
+
+        ID_EX_IR   = 0;
+        ID_EX_A    = 0;
+        ID_EX_B    = 0;
+        ID_EX_Imm  = 0;
+        ID_EX_NPC  = 0;
+
+        EX_MEM_IR      = 0;
+        EX_MEM_ALUOut  = 0;
+
+        MEM_WB_IR      = 0;
+        MEM_WB_ALUOut  = 0;
+        MEM_WB_LMD     = 0;
+
+        HALTED = 0;
+
+        for(i=0; i<32; i=i+1)
+            RegFile[i] = 0;
+
+        for(i=0; i<256; i=i+1)
+            Mem[i] = 0;
+
+
+
+        //====================================================
+        // TARGET VALUE
+        //
+        // 25 -> FOUND
+        // 35 -> FOUND
+        // 45 -> FOUND
+        // 20 -> FOUND
+        // 23 -> NOT FOUND
+        // 33 -> NOT FOUND
+        //====================================================
+
+
+
+        //====================================================
+        // INITIALIZE
+        //====================================================
+
+        Mem[0] = {MOVI, 5'd0, 5'd1, 16'd0};   // low=0
+        Mem[1] = {MOVI, 5'd0, 5'd2, 16'd7};   // high=7
+        Mem[2] = {MOVI, 5'd0, 5'd4, 16'd50};  // target
+
+
+        //====================================================
+        // HEAVY NOPs
+        //====================================================
+
+        Mem[3]  = 32'b0;
+        Mem[4]  = 32'b0;
+        Mem[5]  = 32'b0;
+        Mem[6]  = 32'b0;
+        Mem[7]  = 32'b0;
+
+
+
+        //====================================================
+        // LOOP START = 8
+        //====================================================
+
+
+
+        //====================================================
+        // CHECK high < low
+        //
+        // R11 = (high < low)
+        //====================================================
+
+        Mem[8] = {SLT, 5'd2, 5'd1, 5'd11, 11'b0};
+
+
+        //====================================================
+        // HEAVY NOPs
+        //====================================================
+
+        Mem[9]  = 32'b0;
+        Mem[10] = 32'b0;
+        Mem[11] = 32'b0;
+        Mem[12] = 32'b0;
+        Mem[13] = 32'b0;
+
+
+
+        //====================================================
+        // IF high<low -> NOT FOUND
+        //
+        // NOT FOUND at 85
+        //
+        // offset = 85 - (14+1)
+        //        = 70
+        //====================================================
+
+        Mem[14] = {BNEQZ, 5'd11, 5'd0, 16'd70};
+
+
+        //====================================================
+        // BRANCH DELAY NOPs
+        //====================================================
+
+        Mem[15] = 32'b0;
+        Mem[16] = 32'b0;
+        Mem[17] = 32'b0;
+        Mem[18] = 32'b0;
+        Mem[19] = 32'b0;
+
+
+
+        //====================================================
+        // R5 = high-low
+        //====================================================
+
+        Mem[20] = {SUB, 5'd2, 5'd1, 5'd5, 11'b0};
+
+
+
+        //====================================================
+        // HEAVY NOPs
+        //====================================================
+
+        Mem[21] = 32'b0;
+        Mem[22] = 32'b0;
+        Mem[23] = 32'b0;
+        Mem[24] = 32'b0;
+        Mem[25] = 32'b0;
+
+
+
+        //====================================================
+        // R6 = (high-low)>>1
+        //====================================================
+
+        Mem[26] = {SRTI, 5'd5, 5'd6, 16'd1};
+
+
+
+        //====================================================
+        // HEAVY NOPs
+        //====================================================
+
+        Mem[27] = 32'b0;
+        Mem[28] = 32'b0;
+        Mem[29] = 32'b0;
+        Mem[30] = 32'b0;
+        Mem[31] = 32'b0;
+
+
+
+        //====================================================
+        // R3 = low + mid_offset
+        //====================================================
+
+        Mem[32] = {ADD, 5'd1, 5'd6, 5'd3, 11'b0};
+
+
+
+        //====================================================
+        // HEAVY NOPs
+        //====================================================
+
+        Mem[33] = 32'b0;
+        Mem[34] = 32'b0;
+        Mem[35] = 32'b0;
+        Mem[36] = 32'b0;
+        Mem[37] = 32'b0;
+
+
+
+        //====================================================
+        // LOAD ARRAY[mid]
+        //====================================================
+
+        Mem[38] = {LW, 5'd3, 5'd7, 16'd100};
+
+
+
+        //====================================================
+        // VERY HEAVY NOPs FOR LW
+        //====================================================
+
+        Mem[39] = 32'b0;
+        Mem[40] = 32'b0;
+        Mem[41] = 32'b0;
+        Mem[42] = 32'b0;
+        Mem[43] = 32'b0;
+        Mem[44] = 32'b0;
+        Mem[45] = 32'b0;
+
+
+
+        //====================================================
+        // R8 = MemVal - Target
+        //====================================================
+
+        Mem[46] = {SUB, 5'd7, 5'd4, 5'd8, 11'b0};
+
+
+
+        //====================================================
+        // VERY HEAVY NOPs
+        //====================================================
+
+        Mem[47] = 32'b0;
+        Mem[48] = 32'b0;
+        Mem[49] = 32'b0;
+        Mem[50] = 32'b0;
+        Mem[51] = 32'b0;
+        Mem[52] = 32'b0;
+
+
+
+        //====================================================
+        // IF EQUAL -> FOUND
+        //
+        // FOUND at 78
+        //
+        // offset = 78 - (53+1)
+        //        = 24
+        //====================================================
+
+        Mem[53] = {BEQZ, 5'd8, 5'd0, 16'd24};
+
+
+
+        //====================================================
+        // BRANCH NOPs
+        //====================================================
+
+        Mem[54] = 32'b0;
+        Mem[55] = 32'b0;
+        Mem[56] = 32'b0;
+        Mem[57] = 32'b0;
+        Mem[58] = 32'b0;
+
+
+
+        //====================================================
+        // R9 = (MemVal < Target)
+        //====================================================
+
+        Mem[59] = {SLT, 5'd7, 5'd4, 5'd9, 11'b0};
+
+
+
+        //====================================================
+        // HEAVY NOPs
+        //====================================================
+
+        Mem[60] = 32'b0;
+        Mem[61] = 32'b0;
+        Mem[62] = 32'b0;
+        Mem[63] = 32'b0;
+        Mem[64] = 32'b0;
+
+
+
+        //====================================================
+        // IF R9==0 -> LEFT SIDE
+        //
+        // LEFT SIDE at 71
+        //
+        // offset = 71 - (65+1)
+        //        = 5
+        //====================================================
+
+        Mem[65] = {BEQZ, 5'd9, 5'd0, 16'd5};
+
+
+
+        //====================================================
+        // BRANCH NOPs
+        //====================================================
+
+        Mem[66] = 32'b0;
+        Mem[67] = 32'b0;
+        Mem[68] = 32'b0;
+        Mem[69] = 32'b0;
+        Mem[70] = 32'b0;
+
+
+
+        //====================================================
+        // RIGHT SIDE
+        //
+        // low = mid+1
+        //====================================================
+
+        Mem[71] = {ADDI, 5'd3, 5'd1, 16'd1};
+
+
+
+        //====================================================
+        // JUMP LOOP
+        //
+        // LOOP = 8
+        //
+        // offset = 8 - (72+1)
+        //        = -65
+        //====================================================
+
+        Mem[72] = {BEQZ, 5'd0, 5'd0, -16'd65};
+
+
+
+        //====================================================
+        // BRANCH NOPs
+        //====================================================
+
+        Mem[73] = 32'b0;
+        Mem[74] = 32'b0;
+        Mem[75] = 32'b0;
+        Mem[76] = 32'b0;
+        Mem[77] = 32'b0;
+
+
+
+        //====================================================
+        // FOUND
+        //====================================================
+
+        Mem[78] = {MOVI, 5'd0, 5'd10, 16'd1};
+
+        Mem[79] = {HLT, 26'b0};
+
+
+
+        //====================================================
+        // SAFETY NOPs
+        //====================================================
+
+        Mem[80] = 32'b0;
+        Mem[81] = 32'b0;
+        Mem[82] = 32'b0;
+        Mem[83] = 32'b0;
+        Mem[84] = 32'b0;
+
+
+
+        //====================================================
+        // NOT FOUND
+        //====================================================
+
+        Mem[85] = {MOVI, 5'd0, 5'd7, 16'h00FF};
+
+        Mem[86] = {HLT, 26'b0};
+
+
+
+        //====================================================
+        // ARRAY DATA
+        //====================================================
+
+        Mem[100] = 10;
+        Mem[101] = 15;
+        Mem[102] = 20;
+        Mem[103] = 25;
+        Mem[104] = 30;
+        Mem[105] = 35;
+        Mem[106] = 40;
+        Mem[107] = 45;
+
+    end
+
+    //================ PIPELINE =================//
+
+    always @(posedge clk) begin
+
+        if(slow_en && !HALTED) begin
+
+            //====================================================
+            // WB
+            //====================================================
+
+            case(MEM_WB_IR[31:26])
+
+                ADD,
+                SUB,
+                SLT:
+                    RegFile[MEM_WB_IR[15:11]]
+                        <= MEM_WB_ALUOut;
+
+                ADDI,
+                MOVI,
+                SRTI:
+                    RegFile[MEM_WB_IR[20:16]]
+                        <= MEM_WB_ALUOut;
+
+                LW:
+                    RegFile[MEM_WB_IR[20:16]]
+                        <= MEM_WB_LMD;
+
+                HLT:
+                    HALTED <= 1;
+
             endcase
-          end
-          RM_ALU: begin
-            case (ID_EX_IR[31:26])
-              ADDI:           EX_MEM_ALUOut <= #2 ID_EX_A + ID_EX_Imm;
-              SUBI:           EX_MEM_ALUOut <= #2 ID_EX_A - ID_EX_Imm;
-              SLTI:           EX_MEM_ALUOut <= #2 ID_EX_A << ID_EX_Imm;
-              SRTI:           EX_MEM_ALUOut <= #2 ID_EX_A >> ID_EX_Imm;
-              MOVI:           EX_MEM_ALUOut <= #2 ID_EX_Imm;
-              default:        EX_MEM_ALUOut <= #2 32'hxxxxxxxx;
-            endcase
-          end
-          LOAD, STORE: begin
-                                EX_MEM_ALUOut <= #2 ID_EX_A + ID_EX_Imm;
-                                EX_MEM_B <= #2 ID_EX_B;
-          end
-          BRANCH: begin
-                                TAKEN_BRANCH <= #2 1'B1;
-                                EX_MEM_ALUOut <= #2 ID_EX_NPC + ID_EX_Imm;
-                                EX_MEM_cond <= #2 (ID_EX_A == 0);
-          end
-        endcase
-      end
-/*********************************************************************/
-  always @(posedge clk2)    // MEM Stage
-    begin
-    if (HALTED== 0)
-      begin
-        MEM_WB_type <= EX_MEM_type;
-        MEM_WB_IR <= #2 EX_MEM_IR;
-        case (EX_MEM_type)
-          RR_ALU, RM_ALU:       MEM_WB_ALUOut <= #2 EX_MEM_ALUOut; // Corrected spaces
-          LOAD:                 MEM_WB_LMD <= #2 Mem[EX_MEM_ALUOut];
-          STORE:
-            if (TAKEN_BRANCH == 1)
-              Mem[EX_MEM_ALUOut] <= #2 EX_MEM_B;
-        endcase
-      end
-    end
-/*********************************************************************/
-  always @ (posedge clk1)    // WB Stage
-    begin
-      if (TAKEN_BRANCH == 0)
-        case (MEM_WB_type)
-          RR_ALU:               Reg[MEM_WB_IR[15:11] ] <= #2 MEM_WB_ALUOut; 
-          RM_ALU:               Reg[MEM_WB_IR[20:16]] <= #2 MEM_WB_ALUOut;  
-          LOAD:                 Reg[MEM_WB_IR[20:16]] <= #2 MEM_WB_LMD; 
-          HALT:                 HALTED <= #2 1'b1;
-          default: ; 
-        endcase
-    end
-/*********************************************************************/
 
+
+            //====================================================
+            // MEM
+            //====================================================
+
+            MEM_WB_IR <= EX_MEM_IR;
+
+            if(EX_MEM_IR[31:26] == LW)
+                MEM_WB_LMD <= Mem[EX_MEM_ALUOut];
+
+            else
+                MEM_WB_ALUOut <= EX_MEM_ALUOut;
+
+
+            //====================================================
+            // EX
+            //====================================================
+
+            EX_MEM_IR <= ID_EX_IR;
+
+            branch_taken <= 0;
+
+            case(ID_EX_IR[31:26])
+
+                ADD:
+                    EX_MEM_ALUOut <= ID_EX_A + ID_EX_B;
+
+                SUB:
+                    EX_MEM_ALUOut <= ID_EX_A - ID_EX_B;
+
+                SLT:
+                    EX_MEM_ALUOut <= (ID_EX_A < ID_EX_B);
+
+                ADDI:
+                    EX_MEM_ALUOut <= ID_EX_A + ID_EX_Imm;
+
+                SRTI:
+                    EX_MEM_ALUOut <= ID_EX_A >> ID_EX_Imm;
+
+                MOVI:
+                    EX_MEM_ALUOut <= ID_EX_Imm;
+
+                LW:
+                    EX_MEM_ALUOut <= ID_EX_A + ID_EX_Imm;
+
+                BEQZ:
+                begin
+                    if(ID_EX_A == 0) begin
+                        branch_taken <= 1;
+                        branch_target <= ID_EX_NPC + ID_EX_Imm;
+                    end
+                end
+
+                BNEQZ:
+                begin
+                    if(ID_EX_A != 0) begin
+                        branch_taken <= 1;
+                        branch_target <= ID_EX_NPC + ID_EX_Imm;
+                    end
+                end
+
+                default:
+                    EX_MEM_ALUOut <= 0;
+
+            endcase
+
+
+            //====================================================
+            // ID
+            //====================================================
+
+            if(branch_taken) begin
+
+                ID_EX_IR  <= 0;
+                IF_ID_IR  <= 0;
+
+            end
+            else
+                ID_EX_IR <= IF_ID_IR;
+
+            ID_EX_NPC <= IF_ID_NPC;
+
+            ID_EX_A <= RegFile[IF_ID_IR[25:21]];
+
+            ID_EX_B <= RegFile[IF_ID_IR[20:16]];
+
+            ID_EX_Imm <=
+                {{16{IF_ID_IR[15]}}, IF_ID_IR[15:0]};
+
+
+            //====================================================
+            // IF
+            //====================================================
+
+            if(branch_taken) begin
+
+                PC <= branch_target;
+
+            end
+            else begin
+
+                IF_ID_IR <= Mem[PC];
+
+                IF_ID_NPC <= PC + 1;
+
+                PC <= PC + 1;
+
+            end
+
+        end
+
+    end
+
+
+    //================ OUTPUTS =================//
+
+    assign buzzer = RegFile[10][0];
+
+    assign led = RegFile[7][7:0];
 
 endmodule
+
