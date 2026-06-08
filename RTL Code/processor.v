@@ -1,5 +1,33 @@
 `timescale 1ns / 1ps
 
+/*
+
+//For simulation mode
+
+module misp();
+    reg clk;
+    wire [7:0] led;
+    wire buzzer;
+    reg [2:0] counter = 0;
+    reg slow_en = 0;
+initial begin
+clk= 0;
+forever #10 clk <= ~ clk;
+end
+    always @(posedge clk) begin
+        counter <= counter + 1;
+        slow_en <= (counter == 0); // Pulse for slow execution
+    end
+initial begin
+    $dumpfile("simulation_waves.vcd"); // 1. Name the output file
+    $dumpvars(0, misp);
+    #200000 $finish; 
+end
+    pipe_mips32 cpu (.clk(clk), .slow_en(slow_en), .led(led), .buzzer(buzzer));
+endmodule
+*/
+
+
 // For FPGA Implementation
 
 module misp(
@@ -24,32 +52,6 @@ module pipe_mips32(
     output buzzer
     );
 
-/*
-
-For simulation mode
-
-module misp();
-    reg clk;
-    wire [7:0] led;
-    wire buzzer;
-    reg [2:0] counter = 0;
-    reg slow_en = 0;
-initial begin
-clk= 0;
-forever #10 clk <= ~ clk;
-end
-    always @(posedge clk) begin
-        counter <= counter + 1;
-        slow_en <= (counter == 0); // Pulse for slow execution
-    end
-initial begin
-    $dumpfile("simulation_waves.vcd"); // 1. Name the output file
-    $dumpvars(0, misp);
-    #200000 $finish; 
-end
-    pipe_mips32 cpu (.clk(clk), .slow_en(slow_en), .led(led), .buzzer(buzzer));
-endmodule
-*/
     
     //================ REGISTERS =================//
 
